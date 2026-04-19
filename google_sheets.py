@@ -1,19 +1,12 @@
 """
 google_sheets.py  –  Google Sheets backend for Bills Tracker
-Uses gspread + google-auth via a Service Account JSON key.
+Fixed: uses gspread.service_account_from_dict() instead of deprecated gspread.authorize()
 """
 
 import streamlit as st
 import gspread
-from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
-
-# ─── Scopes ──────────────────────────────────────────────────────────────────
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
 
 # ─── Column layouts ──────────────────────────────────────────────────────────
 USERS_COLS = ["Username", "PasswordHash", "Email", "CreatedAt"]
@@ -21,29 +14,25 @@ DATA_COLS  = ["Username", "Date", "Type", "Category", "Amount", "Description"]
 
 
 class GoogleSheetsDB:
-    """Thin wrapper around gspread for the Bills Tracker app."""
 
     def __init__(self):
-        self.client = self._connect()
-        self.spreadsheet = self._open_spreadsheet()
+        self.client       = self._connect()
+        self.spreadsheet  = self._open_spreadsheet()
         self._ensure_sheets()
 
     # ── Connection ─────────────────────────────────────────────────────────
     def _connect(self) -> gspread.Client:
         """
-        Reads credentials from st.secrets["gcp_service_account"].
-        Add those secrets in Streamlit Cloud → Settings → Secrets.
+        Uses gspread.service_account_from_dict() — the correct modern API.
         """
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=SCOPES,
-        )
-        return gspread.authorize(creds)
+        credentials_dict = dict(st.secrets["gcp_service_account"])
+        credentials_dict["scopes"] = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        return gspread.service_account_from_dict(credentials_dict)
 
     def _open_spreadsheet(self) -> gspread.Spreadsheet:
-        """
-        Opens the sheet by the URL stored in st.secrets["spreadsheet"]["url"].
-        """
         url = st.secrets["spreadsheet"]["url"]
         return self.client.open_by_url(url)
 
@@ -68,22 +57,21 @@ class GoogleSheetsDB:
                 ws.insert_row(DATA_COLS, 1)
 
     # ── Helpers ────────────────────────────────────────────────────────────
-    def _users_sheet(self) -> gspread.Worksheet:
+    def _users_sheet(self):
         return self.spreadsheet.worksheet("Users")
 
-    def _data_sheet(self) -> gspread.Worksheet:
+    def _data_sheet(self):
         return self.spreadsheet.worksheet("Data")
 
-    def _users_df(self) -> pd.DataFrame:
+    def _users_df(self):
         records = self._users_sheet().get_all_records()
         return pd.DataFrame(records) if records else pd.DataFrame(columns=USERS_COLS)
 
-    def _data_df(self) -> pd.DataFrame:
+    def _data_df(self):
         records = self._data_sheet().get_all_records()
         if not records:
             return pd.DataFrame(columns=DATA_COLS)
         df = pd.DataFrame(records)
-        # Attach 1-based row index (+1 for header row)
         df["RowIndex"] = range(2, len(df) + 2)
         return df
 
@@ -111,7 +99,6 @@ class GoogleSheetsDB:
 
     # ── Transaction management ─────────────────────────────────────────────
     def get_user_data(self, username: str) -> pd.DataFrame:
-        """Returns ALL transactions for the given user only."""
         df = self._data_df()
         if df.empty:
             return df
@@ -119,28 +106,15 @@ class GoogleSheetsDB:
         user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors="coerce").fillna(0)
         return user_df.reset_index(drop=True)
 
-    def add_transaction(
-        self,
-        username: str,
-        date: str,
-        txn_type: str,
-        category: str,
-        amount: float,
-        description: str = "",
-    ):
+    def add_transaction(self, username, date, txn_type, category, amount, description=""):
         self._data_sheet().append_row(
             [username, date, txn_type, category, amount, description]
         )
 
     def delete_row(self, username: str, row_index: int):
-        """
-        Deletes a specific row (1-based, including header) from the Data sheet.
-        Verifies the row belongs to the requesting user before deletion.
-        """
         if row_index < 2:
-            return  # Never delete header
+            return
         sheet = self._data_sheet()
         row_data = sheet.row_values(row_index)
-        # Safety check: ensure row belongs to the logged-in user
         if row_data and row_data[0].lower() == username.lower():
             sheet.delete_rows(row_index)
