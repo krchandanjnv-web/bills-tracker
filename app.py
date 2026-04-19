@@ -489,15 +489,22 @@ def show_history():
                 type="primary"
             )
 
-    # Result summary bar
-    has_search = search_query.strip() != ""
-    st.markdown(f"""<div style="font-size:0.82rem;color:#718096;margin-bottom:0.8rem;
-        background:rgba(255,255,255,0.03);border-radius:8px;padding:0.5rem 0.8rem;">
-        {"🔍 <b style='color:#fdcb6e'>Searching: <i>" + search_query.strip() + "</i></b> &nbsp;·&nbsp; " if has_search else ""}
-        Showing <b style="color:#a0aec0">{len(filtered)}</b> of <b style="color:#4a5568">{len(df)}</b> transactions &nbsp;·&nbsp;
-        <b style="color:#00b894">₹{filtered[filtered['Type']=='Income']['Amount'].sum():,.0f} income</b> /
-        <b style="color:#ff6b6b">₹{filtered[filtered['Type']=='Expense']['Amount'].sum():,.0f} expense</b>
-    </div>""", unsafe_allow_html=True)
+    # Result summary bar — build HTML separately to avoid f-string/quote conflicts
+    has_search   = search_query.strip() != ""
+    inc_total    = filtered[filtered["Type"]=="Income"]["Amount"].sum()
+    exp_total    = filtered[filtered["Type"]=="Expense"]["Amount"].sum()
+    search_badge = (f"🔍 <b style='color:#fdcb6e'>Searching: <i>{search_query.strip()}</i></b> &nbsp;·&nbsp; "
+                    if has_search else "")
+    summary_html = (
+        f'<div style="font-size:0.82rem;color:#718096;margin-bottom:0.8rem;' +
+        'background:rgba(255,255,255,0.03);border-radius:8px;padding:0.5rem 0.8rem;">' +
+        search_badge +
+        f'Showing <b style="color:#a0aec0">{len(filtered)}</b> of ' +
+        f'<b style="color:#4a5568">{len(df)}</b> transactions &nbsp;·&nbsp; ' +
+        f'<b style="color:#00b894">₹{inc_total:,.0f} income</b> / ' +
+        f'<b style="color:#ff6b6b">₹{exp_total:,.0f} expense</b></div>'
+    )
+    st.markdown(summary_html, unsafe_allow_html=True)
 
     if filtered.empty:
         st.markdown('<div style="text-align:center;color:#718096;padding:2rem;">No results found for your search.</div>', unsafe_allow_html=True)
