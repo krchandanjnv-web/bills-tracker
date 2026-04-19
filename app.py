@@ -580,17 +580,18 @@ def show_due_tracker():
     # Tabs: Active / Settled / All
     tab_active, tab_settled, tab_all = st.tabs(["🟡 Active", "✅ Settled", "📋 All"])
 
-    def render_dues(ddf, show_settle=True):
+    def render_dues(ddf, show_settle=True, tab_prefix=""):
         if ddf.empty:
             st.info("No entries here."); return
         for idx, row in ddf.iterrows():
+            # Use RowIndex as the unique key component — guaranteed unique across tabs
+            row_key = str(row.get("RowIndex", idx))
             elapsed = days_elapsed(row["StartDate"])
             is_taken = row["DueType"] == "Money Taken"
             tc = "#ff6b6b" if is_taken else "#00b894"
             icon = "🔴" if is_taken else "🟢"
             settled = row["Status"] == "Settled"
 
-            # Row card
             st.markdown(f"""
             <div style="background:{'rgba(255,107,107,0.06)' if is_taken else 'rgba(0,184,148,0.06)'};
                 border:1px solid {'rgba(255,107,107,0.2)' if is_taken else 'rgba(0,184,148,0.2)'};
@@ -610,35 +611,34 @@ def show_due_tracker():
                 <div style="color:#a0aec0;font-size:0.83rem;margin-top:0.4rem;">📝 {row.get('Description','')}</div>
             </div>""", unsafe_allow_html=True)
 
-            # Action buttons
             ac1, ac2, ac3 = st.columns([2,1,1])
             with ac2:
                 if show_settle and not settled:
-                    if st.button("✅ Settle", key=f"settle_{idx}", use_container_width=True):
+                    if st.button("✅ Settle", key=f"{tab_prefix}_settle_{row_key}", use_container_width=True):
                         db.update_due_status(st.session_state.username, int(row["RowIndex"]), "Settled")
                         st.rerun()
                 elif settled:
-                    if st.button("🔄 Reopen", key=f"reopen_{idx}", use_container_width=True):
+                    if st.button("🔄 Reopen", key=f"{tab_prefix}_reopen_{row_key}", use_container_width=True):
                         db.update_due_status(st.session_state.username, int(row["RowIndex"]), "Active")
                         st.rerun()
             with ac3:
-                if st.button("🗑️ Delete", key=f"ddel_{idx}", use_container_width=True):
+                if st.button("🗑️ Delete", key=f"{tab_prefix}_del_{row_key}", use_container_width=True):
                     db.delete_due(st.session_state.username, int(row["RowIndex"]))
                     st.rerun()
 
     with tab_active:
         active_dues = dues_df[dues_df["Status"]=="Active"]
         st.markdown(f'<div style="color:#718096;font-size:0.82rem;margin-bottom:0.8rem;">{len(active_dues)} active due(s)</div>', unsafe_allow_html=True)
-        render_dues(active_dues, show_settle=True)
+        render_dues(active_dues, show_settle=True, tab_prefix="act")
 
     with tab_settled:
         settled_dues = dues_df[dues_df["Status"]=="Settled"]
         st.markdown(f'<div style="color:#718096;font-size:0.82rem;margin-bottom:0.8rem;">{len(settled_dues)} settled due(s)</div>', unsafe_allow_html=True)
-        render_dues(settled_dues, show_settle=False)
+        render_dues(settled_dues, show_settle=False, tab_prefix="set")
 
     with tab_all:
         st.markdown(f'<div style="color:#718096;font-size:0.82rem;margin-bottom:0.8rem;">{len(dues_df)} total due(s)</div>', unsafe_allow_html=True)
-        render_dues(dues_df, show_settle=True)
+        render_dues(dues_df, show_settle=True, tab_prefix="all")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN ROUTER
